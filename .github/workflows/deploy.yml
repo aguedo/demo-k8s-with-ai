@@ -1,0 +1,39 @@
+name: Deploy to AKS
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'kustomize/**'
+      - 'helm/**'
+      - '.github/workflows/deploy.yml'
+
+env:
+  CLUSTER_NAME: ${{ secrets.AKS_CLUSTER_NAME }}
+  RESOURCE_GROUP: ${{ secrets.AKS_RESOURCE_GROUP }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [dev, staging, prod-us-east, prod-us-west]
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Azure login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Set AKS context
+        uses: azure/aks-set-context@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          resource-group: ${{ env.RESOURCE_GROUP }}
+      - name: Deploy manifests
+        run: |
+          kubectl apply -k kustomize/overlays/${{ matrix.environment }}
+          helm upgrade --install sample-app ./helm/service-chart \
+            --set image.repository=${{ secrets.ACR_LOGIN_SERVER }}/sample-app
+
